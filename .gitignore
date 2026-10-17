@@ -1,0 +1,23 @@
+# Secrets
+.env
+*.pem
+*.key
+*.pfx
+*.p12
+*.kdbx
+credentials*.json
+
+# Raw exports and captures (sanitize before committing anything from here)
+exports/raw/
+*.evtx
+*.pcap
+*.pcapng
+
+# Python
+.venv/
+__pycache__/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
