@@ -22,7 +22,7 @@ See [ROADMAP.md](ROADMAP.md) for the full plan, stack, and month-by-month build.
 
 ## Write-ups
 
-*One per scenario in [`writeups/`](writeups/): Objective → Setup → Attack → Detection → Response → Gaps.*
+- [01 — Windows 11 golden image on Proxmox](writeups/01-golden-image/)
 
 ## Lab hygiene
 
