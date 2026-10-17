@@ -21,3 +21,6 @@ __pycache__/
 Thumbs.db
 .DS_Store
 .vscode/
+
+# Private notes (local only, never pushed)
+private/
