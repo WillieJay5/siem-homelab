@@ -45,6 +45,20 @@ Template `w11-base`, VMID 9000 (from `qm config 9000`; MAC and UUIDs omitted).
 
 A **full** clone is used instead of a linked clone so clones don't depend on the template's disk and can be moved or the template rebuilt independently.
 
+8. Clone `win11-01` (VMID 102) from the GUI: right-click the template → **Clone**, Mode **Full Clone**. The disk stays at the template's 60 GB.
+
+   ![Clone dialog: full clone of template 9000 to VMID 102](img/clone.png)
+
+9. **Options → Boot Order**: only `scsi0` enabled, so the clone boots from disk and never PXE-boots.
+
+   ![Boot order with scsi0 first and net0 disabled](img/boot-order.png)
+
+10. Boot, complete OOBE with a local account (domain join comes later with `dc01`), rename, and snapshot as `clean-baseline` once verified:
+
+    ```powershell
+    Rename-Computer -NewName win11-01 -Restart
+    ```
+
 ## Problems
 
 Sysprep failed twice. The dialog only says validation failed; the actual error is in `C:\Windows\System32\Sysprep\Panther\setupact.log` (and `setuperr.log`), which is the first place to look for any sysprep failure.
@@ -81,6 +95,17 @@ Get-AppxPackage -AllUsers -Name '<package name from the log>' | Remove-AppxPacka
 
 **Prevention:** take the VM offline before sysprep so the Store can't reinstall apps per-user mid-process.
 
+### 3. BitLocker turned itself on in the clone
+
+**Symptom:** `reagentc /enable` failed because BitLocker was active on C:, even though BitLocker was never configured.
+**Cause:** Windows 11 automatic device encryption. The VM has a TPM, so Windows encrypts the OS drive after OOBE. With a local account the recovery key isn't escrowed anywhere, so any change to the vTPM state would leave the disk unrecoverable.
+**Fix:** decrypt, and leave BitLocker to Intune (Month 2), which escrows the key to Entra:
+
+```powershell
+Disable-BitLocker -MountPoint C:
+Get-BitLockerVolume -MountPoint C: | Select VolumeStatus, EncryptionPercentage, ProtectionStatus   # FullyDecrypted, 0, Off
+```
+
 ## Verification
 
 - [x] Sysprep completed and the VM shut itself down
@@ -88,13 +113,15 @@ Get-AppxPackage -AllUsers -Name '<package name from the log>' | Remove-AppxPacka
 
 ![w11-base (VMID 9000) as a template in Proxmox](img/proxmox-template.png)
 
-- [ ] Clone check (when `win11-01` is built): boots into OOBE and gets a unique machine SID
+- [x] Clone check: `win11-01` booted into OOBE; `GeneralizationState` is `7` (generalize ran) and the machine has its own SID
+
+![Clone verification: whoami /user, GeneralizationState 7, hostname win11-01](img/validation.png)
 
 ## Gaps
 
 - **Evaluation license.** Enterprise Evaluation expires (90 days *(verify)*) counted from each clone's install, not the template's, so clones built late in the plan last longer. Capture write-up material before expiry.
-- **Install media still attached.** The template keeps both ISOs and boots `ide2` (the installer) first, so every clone inherits them. Fix: `qm set 9000 --delete ide0,ide2 --boot order=scsi0`.
+- **Device encryption in the template.** Every clone encrypts itself after OOBE (problem 3). Next rebuild: set `HKLM\SYSTEM\CurrentControlSet\Control\BitLocker\PreventDeviceEncryption = 1` (DWORD) before sealing.
 - **Old VirtIO drivers.** virtio-win 0.1.221 dates from 2022; update the drivers in the template on the next rebuild.
-- **Disk size.** The template is 60 GB, while the roadmap budgets 80 GB for `win11-01`; resize the clone (`qm disk resize`) and extend C: if needed.
+- **Disk size.** Clones keep the template's 60 GB. Growing one means deleting the recovery partition that sits after C:; run `reagentc /disable` *before* deleting it, or `Winre.wim` is lost with the partition and `reagentc /enable` fails.
 - **Manual build.** Each rebuild repeats these steps by hand. Next step: an `autounattend.xml` or Packer build in `infra/` so the image is reproducible.
 - **Patch drift.** The template ages from the day it's sealed; clones need updates on first boot until Intune takes over patching (Month 2).
