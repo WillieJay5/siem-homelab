@@ -1,0 +1,216 @@
+# Single-node Elastic stack for elk01: Elasticsearch, Kibana and Fleet Server, all over TLS.
+# Based on Elastic's official Docker Compose example. Copy .env.example to .env first.
+#
+# Key handling: the CA private key lives only in the `ca` volume, which only the `certs` job mounts.
+# Each long-running service mounts just the CA cert and its own cert/key (volume subpaths, which need
+# Docker Engine 26+), read-only. A compromised Kibana can't read the key that every agent trusts.
+
+services:
+  # One-shot jobs: they exit when done, so dependents wait on service_completed_successfully
+  # (an exited container never counts as "healthy", which breaks every `up` after the first).
+
+  # Creates the CA and service certs on first run; later runs only re-apply permissions.
+  certs:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - ca:/usr/share/elasticsearch/config/ca
+      - certs:/usr/share/elasticsearch/config/certs
+    user: "0"
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        if [ ! -f config/ca/ca.crt ]; then
+          if [ -f config/certs/ca/ca.key ]; then
+            # Older layout kept the CA key in the shared volume: move it, keeping the same CA fingerprint.
+            cp config/certs/ca/ca.crt config/certs/ca/ca.key config/ca/
+          else
+            bin/elasticsearch-certutil ca --silent --pem -out config/ca/ca.zip
+            unzip -q config/ca/ca.zip -d config
+          fi
+        fi
+        mkdir -p config/certs/ca
+        cp config/ca/ca.crt config/certs/ca/ca.crt
+        rm -f config/certs/ca/ca.key config/certs/*.zip config/ca/*.zip
+        if [ ! -f config/certs/es01/es01.crt ]; then
+          cat > config/certs/instances.yml <<'EOF'
+        instances:
+          - name: es01
+            dns: [es01, elk01, ${ELK_FQDN}, localhost]
+            ip: [127.0.0.1, ${ELK_IP}]
+          - name: kibana
+            dns: [kibana, elk01, ${ELK_FQDN}, localhost]
+            ip: [127.0.0.1, ${ELK_IP}]
+          - name: fleet-server
+            dns: [fleet-server, elk01, ${ELK_FQDN}, localhost]
+            ip: [127.0.0.1, ${ELK_IP}]
+        EOF
+          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip \
+            --in config/certs/instances.yml --ca-cert config/ca/ca.crt --ca-key config/ca/ca.key
+          unzip -q config/certs/certs.zip -d config/certs
+          rm -f config/certs/certs.zip
+        fi
+        # Services run as uid 1000 / gid 0 (or root), so group-read is enough; nothing is world-readable.
+        chown -R root:root config/ca config/certs
+        find config/ca config/certs -type d -exec chmod 750 {} \;
+        find config/ca config/certs -type f -exec chmod 640 {} \;
+
+  # Sets the kibana_system password and creates Fleet Server's service token (both idempotent).
+  setup:
+    depends_on:
+      es01:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    user: "0"
+    volumes:
+      - type: volume
+        source: certs
+        target: /usr/share/elasticsearch/config/certs/ca
+        read_only: true
+        volume: {subpath: ca}
+      - fleettoken:/fleet-token
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" \
+          -H "Content-Type: application/json" https://es01:9200/_security/user/kibana_system/_password \
+          -d '{"password":"${KIBANA_PASSWORD}"}' | grep -q "^{}"; do sleep 5; done
+        if [ ! -s /fleet-token/token ]; then
+          url=https://es01:9200/_security/service/elastic/fleet-server/credential/token/compose
+          curl -s -X DELETE --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" "$$url" > /dev/null
+          curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" "$$url" \
+            | sed -n 's/.*"value":"\([^"]*\)".*/\1/p' > /fleet-token/token
+          [ -s /fleet-token/token ] || { echo "Fleet Server token creation failed"; exit 1; }
+          chmod 600 /fleet-token/token
+        fi
+        echo "Setup done."
+
+  es01:
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: certs
+        target: /usr/share/elasticsearch/config/certs/ca
+        read_only: true
+        volume: {subpath: ca}
+      - type: volume
+        source: certs
+        target: /usr/share/elasticsearch/config/certs/es01
+        read_only: true
+        volume: {subpath: es01}
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+    environment:
+      - node.name=es01
+      - cluster.name=${CLUSTER_NAME}
+      - discovery.type=single-node
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=true
+      - ES_JAVA_OPTS=-Xms${ES_HEAP} -Xmx${ES_HEAP}
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/es01/es01.key
+      - xpack.security.http.ssl.certificate=certs/es01/es01.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.license.self_generated.type=basic
+    mem_limit: ${ES_MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'"]
+      interval: 10s
+      retries: 120
+
+  kibana:
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: certs
+        target: /usr/share/kibana/config/certs/ca
+        read_only: true
+        volume: {subpath: ca}
+      - type: volume
+        source: certs
+        target: /usr/share/kibana/config/certs/kibana
+        read_only: true
+        volume: {subpath: kibana}
+      - ./kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    ports:
+      - 5601:5601
+    environment:
+      - ELK_FQDN=${ELK_FQDN}
+      - SERVERNAME=kibana
+      - SERVER_PUBLICBASEURL=https://${ELK_FQDN}:5601
+      - SERVER_SSL_ENABLED=true
+      - SERVER_SSL_CERTIFICATE=config/certs/kibana/kibana.crt
+      - SERVER_SSL_KEY=config/certs/kibana/kibana.key
+      - ELASTICSEARCH_HOSTS=https://es01:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
+      # Required by Fleet and detection rules; must never change once set.
+      - XPACK_SECURITY_ENCRYPTIONKEY=${ENCRYPTION_KEY}
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${ENCRYPTION_KEY}
+      - XPACK_REPORTING_ENCRYPTIONKEY=${ENCRYPTION_KEY}
+    mem_limit: ${KIBANA_MEM_LIMIT}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -I --cacert config/certs/ca/ca.crt https://localhost:5601 | grep -qE '^HTTP/[0-9.]+ 302'"]
+      interval: 10s
+      retries: 120
+
+  # Elastic Agent in Fleet Server mode, authenticating with the service token from `setup` (no superuser
+  # credentials). Enrolls into fleet-server-policy; the state volume stops re-enrollment on restart.
+  fleet-server:
+    depends_on:
+      kibana:
+        condition: service_healthy
+    image: docker.elastic.co/elastic-agent/elastic-agent:${STACK_VERSION}
+    hostname: fleet-server  # stable agent name in Fleet instead of the random container ID
+    restart: unless-stopped
+    user: root
+    volumes:
+      - type: volume
+        source: certs
+        target: /certs/ca
+        read_only: true
+        volume: {subpath: ca}
+      - type: volume
+        source: certs
+        target: /certs/fleet-server
+        read_only: true
+        volume: {subpath: fleet-server}
+      - fleettoken:/fleet-token:ro
+      - fleetdata:/usr/share/elastic-agent/state
+    ports:
+      - 8220:8220
+    environment:
+      - FLEET_SERVER_ENABLE=1
+      - FLEET_SERVER_POLICY_ID=fleet-server-policy  # created by kibana.yml preconfiguration
+      - FLEET_SERVER_SERVICE_TOKEN_PATH=/fleet-token/token
+      - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
+      - FLEET_SERVER_ELASTICSEARCH_CA=/certs/ca/ca.crt
+      - FLEET_SERVER_CERT=/certs/fleet-server/fleet-server.crt
+      - FLEET_SERVER_CERT_KEY=/certs/fleet-server/fleet-server.key
+      - FLEET_URL=https://fleet-server:8220
+      - FLEET_CA=/certs/ca/ca.crt
+
+volumes:
+  ca:
+  certs:
+  esdata:
+  fleetdata:
+  fleettoken:

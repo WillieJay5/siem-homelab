@@ -1,0 +1,22 @@
+# Mounted over the image's default kibana.yml, so its one essential line is repeated here.
+# Everything else comes from environment variables in docker-compose.yml.
+server.host: "0.0.0.0"
+
+# Fleet preconfiguration: created on every Kibana start if missing (read-only in the UI).
+xpack.fleet.packages:
+  - name: fleet_server
+    version: latest
+xpack.fleet.agentPolicies:
+  - name: Fleet Server Policy
+    id: fleet-server-policy
+    namespace: default
+    package_policies:
+      - name: fleet_server-1
+        id: fleet_server-1
+        package:
+          name: fleet_server
+xpack.fleet.fleetServerHosts:
+  - id: default-fleet-server
+    name: Default
+    is_default: true
+    host_urls: ["https://${ELK_FQDN}:8220"]
