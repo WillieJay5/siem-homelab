@@ -119,7 +119,7 @@ Get-BitLockerVolume -MountPoint C: | Select VolumeStatus, EncryptionPercentage, 
 
 ## Gaps
 
-- **Evaluation license.** Enterprise Evaluation expires (90 days *(verify)*) counted from each clone's install, not the template's, so clones built late in the plan last longer. Capture write-up material before expiry.
+- **Evaluation license.** Enterprise Evaluation expires (90 days, can be extended) counted from each clone's install, not the template's, so clones built late in the plan last longer. Capture write-up material before expiry.
 - **Device encryption in the template.** Every clone encrypts itself after OOBE (problem 3). Next rebuild: set `HKLM\SYSTEM\CurrentControlSet\Control\BitLocker\PreventDeviceEncryption = 1` (DWORD) before sealing.
 - **Old VirtIO drivers.** virtio-win 0.1.221 dates from 2022; update the drivers in the template on the next rebuild.
 - **Disk size.** Clones keep the template's 60 GB. Growing one means deleting the recovery partition that sits after C:; run `reagentc /disable` *before* deleting it, or `Winre.wim` is lost with the partition and `reagentc /enable` fails.

@@ -6,7 +6,25 @@ server.host: "0.0.0.0"
 xpack.fleet.packages:
   - name: fleet_server
     version: latest
+  - name: system
+    version: latest
+  - name: windows
+    version: latest
 xpack.fleet.agentPolicies:
+  # Log collection only. No Elastic Defend here: it would register as AV and push MDE into passive mode.
+  - name: Windows Endpoints
+    id: windows-endpoints
+    namespace: default
+    monitoring_enabled: [logs, metrics]
+    package_policies:
+      - name: system-windows-endpoints  # Security, System, Application logs + host metrics
+        id: system-windows-endpoints
+        package:
+          name: system
+      - name: windows-windows-endpoints  # Sysmon, PowerShell, Defender channels
+        id: windows-windows-endpoints
+        package:
+          name: windows
   - name: Fleet Server Policy
     id: fleet-server-policy
     namespace: default

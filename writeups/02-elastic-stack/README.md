@@ -16,7 +16,7 @@ Stand up the lab's SIEM: a single-node Elasticsearch, Kibana and Fleet Server on
 | CPU / RAM | 4 vCPU (`host`), 6 GB, ballooning **off** | Elasticsearch sizes its heap at start; ballooning would take memory back from the JVM |
 | Disk | 150 GB, VirtIO SCSI, discard on | Retention is sized to this disk (see ILM) |
 | Network | Servers VLAN (20), static DHCP reservation, local DNS record | Endpoints and Fleet reach it by FQDN; the FQDN is in the TLS certs |
-| Elastic | 9.1.0, Basic license | Free tier covers SIEM, detection rules and Fleet |
+| Elastic | 9.1.0 at build, now 9.5.5 ([03, problem 5](../03-endpoint-telemetry/README.md#5-event-log-inputs-stuck-in-starting)), Basic license | Free tier covers SIEM, detection rules and Fleet |
 | Docker | Engine 26+ | Needed for read-only volume subpath mounts (see Security design) |
 | Memory split | ES 3 GB (2 GB heap), Kibana 1 GB, Fleet Server + OS the rest | Fits the 6 GB budget in the roadmap |
 
