@@ -10,7 +10,7 @@ A homelab built like a Microsoft-centric enterprise SOC: Elastic SIEM, Microsoft
 
 - [x] Proxmox host
 - [x] Windows 11 golden template
-- [ ] Elastic SIEM (`elk01`)
+- [x] Elastic SIEM (`elk01`)
 - [ ] Active Directory (`dc01`)
 - [ ] OPNsense / Suricata log shipping
 - [ ] Intune + hybrid identity
@@ -21,7 +21,3 @@ A homelab built like a Microsoft-centric enterprise SOC: Elastic SIEM, Microsoft
 ## Write-ups
 
 - [01 — Windows 11 golden image on Proxmox](writeups/01-golden-image/)
-
-## Lab hygiene
-
-Dedicated lab tenant only; no real accounts or data. Configs are sanitized before commit, and secrets live in `.env` files that are never tracked (`.env.example` only).
