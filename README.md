@@ -10,9 +10,11 @@ A homelab built like a Microsoft-centric enterprise SOC: Elastic SIEM, Microsoft
 
 - [x] Proxmox host
 - [x] Windows 11 golden template
-- [x] Elastic SIEM (`elk01`)
+- [x] Elastic SIEM (`elk01`): Elasticsearch, Kibana and Fleet Server with TLS
+- [x] Endpoint telemetry: Elastic Agent + Sysmon on `win11-01`, prebuilt rules enabled
+- [x] OPNsense VLAN segmentation for lab VMs
 - [ ] Active Directory (`dc01`)
-- [ ] OPNsense / Suricata log shipping
+- [ ] Suricata + OPNsense log shipping to Elastic
 - [ ] Intune + hybrid identity
 - [ ] Defender suite (MDE, MDI, MDO, MDCA)
 - [ ] n8n SOAR workflow
@@ -21,3 +23,5 @@ A homelab built like a Microsoft-centric enterprise SOC: Elastic SIEM, Microsoft
 ## Write-ups
 
 - [01 — Windows 11 golden image on Proxmox](writeups/01-golden-image/)
+- [02 — Elastic Stack (SIEM) on Docker Compose](writeups/02-elastic-stack/)
+- [03 — Endpoint telemetry: Elastic Agent + Sysmon on `win11-01`](writeups/03-endpoint-telemetry/)
