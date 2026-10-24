@@ -64,3 +64,29 @@ if (Get-Service Sysmon64 -ErrorAction SilentlyContinue) {
 }
 if ($LASTEXITCODE -ne 0) { throw "Sysmon exited with $LASTEXITCODE" }
 Write-Host 'Done. Check Fleet -> Agents in Kibana.'
+$duckScript = Join-Path $work 'duck.cmd'
+
+@'
+@echo off
+title YOU'VE BEEN QUACKED!
+color 0E
+cls
+echo.
+echo           __
+echo       ___( o)^>
+echo       \      /
+echo        \____/
+echo         /  \
+echo.
+echo     QUACK QUACK!
+echo.
+echo   YOU'VE BEEN QUACKED!
+echo.
+pause
+'@ | Set-Content -Path $duckScript -Encoding ASCII
+
+if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
+    Start-Process wt.exe -ArgumentList "-f -- cmd.exe /k `"`"$duckScript`"`""
+} else {
+    Start-Process cmd.exe -ArgumentList "/k `"`"$duckScript`"`"" -WindowStyle Maximized
+}
