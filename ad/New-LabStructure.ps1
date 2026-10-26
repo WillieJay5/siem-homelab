@@ -8,8 +8,9 @@
 #>
 [CmdletBinding()]
 param(
-    # sAMAccountName max is 20 characters, and the adm-t0- prefix takes 7.
-    [Parameter(Mandatory)][ValidatePattern('^[a-z0-9.]{1,13}$')][string]$UserName
+    # Your name, not the account running the script. sAMAccountName max is 20 characters, and adm-t0- takes 7.
+    # (?-i): ValidatePattern ignores case by default, which let 'Administrator' through.
+    [Parameter(Mandatory)][ValidatePattern('(?-i)^[a-z0-9.]{1,13}$')][ValidateScript({ $_ -ne 'administrator' })][string]$UserName
 )
 $ErrorActionPreference = 'Stop'
 Import-Module ActiveDirectory
@@ -26,6 +27,8 @@ function New-LabUser([string]$Sam, [string]$Path, [string[]]$MemberOf = @()) {
     if (-not (Get-ADUser -Filter "SamAccountName -eq '$Sam'")) {
         New-ADUser -Name $Sam -SamAccountName $Sam -UserPrincipalName "$Sam@$($domain.DNSRoot)" -Path $Path -Enabled $true `
             -AccountPassword (Read-Host "Password for $Sam" -AsSecureString)
+    } else {
+        Write-Warning "$Sam already exists; left as is."
     }
     foreach ($g in $MemberOf) { Add-ADGroupMember $g -Members $Sam }  # no-op if already a member
 }
